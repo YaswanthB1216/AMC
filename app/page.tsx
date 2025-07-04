@@ -2,6 +2,9 @@
 
 import Link from "next/link"
 import Layout from "../components/layout"
+import Image from "next/image";
+import HEROIMAGE from "../hero-image.png"
+import KaaraLogo from "../kaara_logo.png"
 
 export default function HomePage() {
   const features = [
@@ -45,23 +48,30 @@ export default function HomePage() {
               recommendations in minutes.
             </p>
             <div className="hero__actions">
-              <Link href="/upload" className="cds-btn cds-btn--primary hero__cta" style={{ backgroundColor: 'var(--cds-text-primary)', color: 'var(--cds-white)' }}>
+              <Link href="/upload" className="cds-btn cds-btn--primary hero__cta" style={{ backgroundColor: 'var(--cds-text-primary)', color: 'white' }}>
                 Start Analysis
               </Link>
-              <Link href="/dashboard" className="cds-btn cds-btn--secondary" style={{ backgroundColor: 'var(--cds-text-primary)', color: 'var(--cds-white)' }}>
+              <Link href="/dashboard" className="cds-btn cds-btn--secondary" style={{ backgroundColor: 'var(--cds-text-primary)', color: 'white' }}>
                 View Dashboard
               </Link>
             </div>
           </div>
           <div className="hero__visual">
             <div className="hero__chart">
-              <div className="chart-placeholder">
+              {/* <div className="chart-placeholder">
                 <div className="chart-bar" style={{ height: "60%" }}></div>
                 <div className="chart-bar" style={{ height: "80%" }}></div>
                 <div className="chart-bar" style={{ height: "45%" }}></div>
                 <div className="chart-bar" style={{ height: "90%" }}></div>
                 <div className="chart-bar" style={{ height: "70%" }}></div>
-              </div>
+              </div> */}
+            <Image
+                src={HEROIMAGE} // Path relative to the `public` directory
+                alt="Hero Logo"
+                width={400} // Specify the width of the image
+                height={300} // Specify the height of the image
+                priority // Optional: prioritize loading for above-the-fold images
+              />
             </div>
           </div>
         </div>
@@ -116,15 +126,15 @@ export default function HomePage() {
 
       <style jsx>{`
         .hero {
-          background: linear-gradient(135deg, var(--cds-blue-60) 0%, var(--cds-blue-70) 100%);
-          color: var(--cds-text-on-color);
+          background:#FFF5f5;
+          color: #525252
           padding: var(--cds-spacing-10) 0;
         }
 
         .hero__container {
           max-width: 1584px;
           margin: 0 auto;
-          padding: 0 var(--cds-spacing-05);
+          padding: 10px 20px 10px 20px;
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: var(--cds-spacing-09);
@@ -167,10 +177,10 @@ export default function HomePage() {
         }
 
         .hero__chart {
-          background-color: rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
-          padding: var(--cds-spacing-06);
-          backdrop-filter: blur(10px);
+          // background-color: rgba(255, 255, 255, 0.1);
+          // border-radius: 8px;
+          // padding: var(--cds-spacing-06);
+          // backdrop-filter: blur(10px);
         }
 
         .chart-placeholder {
@@ -182,7 +192,7 @@ export default function HomePage() {
 
         .chart-bar {
           width: 40px;
-          background-color: var(--cds-text-on-color);
+          background-color: red;
           border-radius: 4px 4px 0 0;
           opacity: 0.8;
         }
@@ -211,7 +221,7 @@ export default function HomePage() {
         .stats__value {
           font-size: 2.5rem;
           font-weight: 600;
-          color: var(--cds-blue-60);
+          color:rgb(103, 240, 140);
           margin-bottom: var(--cds-spacing-02);
         }
 

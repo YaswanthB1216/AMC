@@ -30,6 +30,8 @@
   --cds-red-60: #da1e28;
   --cds-green-60: #24a148;
   --cds-yellow-30: #f1c21b;
+  --kara-color:#FFF5F5;
+  --cds-black:#000000;
 
   /* Spacing */
   --cds-spacing-01: 0.125rem;
@@ -60,11 +62,16 @@
   margin: 0;
   padding: 0;
 }
+a{
+  text-decoration: none;
+  color: black;
+}
+
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans",
     "Droid Sans", "Helvetica Neue", "Arial", sans-serif;
-  background-color: var(--cds-background);
+  background-color: #f9fafb;
   color: var(--cds-text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -148,19 +155,21 @@ body {
 }
 
 .cds-btn--primary {
-  background-color: var(--cds-blue-60);
+  background-color: var(--cds-black);
   color: var(--cds-text-on-color);
 }
 
 .cds-btn--primary:hover {
-  background-color: var(--cds-blue-70);
+  background-color: var(--cds-black);
 }
 
 .cds-btn--secondary {
   background-color: transparent;
   color: var(--cds-blue-60);
-  border: 1px solid var(--cds-blue-60);
+  /* border: 1px solid var(--cds-blue-60); */
 }
+
+
 
 .cds-btn--secondary:hover {
   background-color: var(--cds-blue-60);
@@ -309,6 +318,8 @@ body {
   background-color: var(--cds-blue-60);
   transition: width 0.3s ease;
 }
+
+
 
 /* Responsive */
 @media (max-width: 768px) {
