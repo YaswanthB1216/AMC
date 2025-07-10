@@ -31,9 +31,9 @@ export default function HomePage() {
   ]
 
   const stats = [
-    { label: "Documents Analyzed", value: "10,000+" },
+    { label: "Documents Analyzed", value: "100+" },
     { label: "Compliance Rate", value: "95%" },
-    { label: "Processing Time", value: "<5 min" },
+    { label: "Processing Time", value: "<2 min" },
     { label: "SEBI Guidelines", value: "100%" },
   ]
 

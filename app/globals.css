@@ -321,6 +321,14 @@ body {
 
 
 
+.or-separation{
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+  color: #9c1418;
+}
+
+
 /* Responsive */
 @media (max-width: 768px) {
   .cds-grid {

@@ -5,7 +5,7 @@
 // import { useRouter } from "next/navigation"
 // import Layout from "../../components/layout"
 // import { doc, setDoc, Timestamp } from "firebase/firestore"
-// import { db, auth } from "../../lib/firebase"
+// import { db } from "../../lib/firebase"
 
 // interface UploadedFile {
 //   id: string
@@ -19,7 +19,7 @@
 //   clause: string
 //   issue: string
 //   fix: string
-//   reference: string
+//   reference?: string // Made optional to handle missing reference
 // }
 
 // interface DocumentAnalysis {
@@ -30,6 +30,7 @@
 //   }
 //   uploadDate: Timestamp
 //   status: "completed" | "failed"
+//   processingTime: string
 // }
 
 // export default function UploadPage() {
@@ -96,13 +97,14 @@
 //   }
 
 //   const sanitizeFileName = (fileName: string) => {
-//     // Remove invalid Firestore document ID characters, trim, and append timestamp
+//     // Remove invalid Firestore document ID characters, trim, and append unique timestamp
 //     const baseName = fileName
 //       .replace(/[^a-zA-Z0-9.-]/g, "_")
 //       .replace(/\.\./g, "_")
+//       .replace(/^\.+|\.+$/g, "") // Remove leading/trailing dots
 //       .slice(0, 90)
 //     const timestamp = Date.now()
-//     return `${baseName}_${timestamp}`
+//     return `${baseName}_${timestamp}_${Math.random().toString(36).substr(2, 4)}`
 //   }
 
 //   const handleApiCall = async (file: File) => {
@@ -110,6 +112,7 @@
 //       const formData = new FormData()
 //       formData.append("file", file)
 
+//       const startTime = Date.now()
 //       const response = await fetch("http://localhost:8000/check_compliance", {
 //         method: "POST",
 //         body: formData,
@@ -120,9 +123,48 @@
 //       }
 
 //       const data = await response.json()
-//       return { fileName: file.name, response: data }
+//       console.log("API response for", file.name, JSON.stringify(data, null, 2))
+
+//       // Validate API response structure
+//       if (!data || !Array.isArray(data.issues) || !Array.isArray(data.raw_response)) {
+//         console.error("Invalid API response structure:", data)
+//         throw new Error(`Invalid API response format for ${file.name}: Missing or invalid issues/raw_response arrays`)
+//       }
+
+//       // Validate each issue object
+//       const invalidIssues = data.issues.map((issue: any, index: number) => {
+//         if (!issue ||
+//             typeof issue.clause !== "string" ||
+//             typeof issue.issue !== "string" ||
+//             typeof issue.fix !== "string" ||
+//             (issue.reference !== undefined && typeof issue.reference !== "string")) {
+//           return { index, issue };
+//         }
+//         return null;
+//       }).filter(Boolean);
+
+//       if (invalidIssues.length > 0) {
+//         console.error("Invalid issues in API response:", invalidIssues);
+//         throw new Error(`Invalid API response format for ${file.name}: Issues array contains invalid objects at indices ${invalidIssues.map(i => i.index).join(", ")}`);
+//       }
+
+//       // Validate raw_response contains strings
+//       const invalidRawResponses = data.raw_response.map((item: any, index: number) => {
+//         if (typeof item !== "string") {
+//           return { index, item };
+//         }
+//         return null;
+//       }).filter(Boolean);
+
+//       if (invalidRawResponses.length > 0) {
+//         console.error("Invalid raw_response in API response:", invalidRawResponses);
+//         throw new Error(`Invalid API response format for ${file.name}: raw_response contains non-string items at indices ${invalidRawResponses.map(i => i.index).join(", ")}`);
+//       }
+
+//       const processingTime = ((Date.now() - startTime) / 1000).toFixed(2) + "s"
+//       return { fileName: file.name, response: data, processingTime }
 //     } catch (error) {
-//       console.error("API call failed for file:", file.name, error)
+//       console.error("API call failed for file:", file.name, error);
 //       throw error
 //     }
 //   }
@@ -144,7 +186,7 @@
 
 //         try {
 //           // Make API call
-//           const { fileName, response } = await handleApiCall(uploadedFile.file)
+//           const { fileName, response, processingTime } = await handleApiCall(uploadedFile.file)
 
 //           // Simulate progress for UI
 //           for (let progress = 0; progress <= 100; progress += 10) {
@@ -160,12 +202,22 @@
 //           const sanitizedFileName = sanitizeFileName(fileName)
 //           const analysis: DocumentAnalysis = {
 //             fileName,
-//             response,
+//             response: {
+//               issues: response.issues,
+//               raw_response: response.raw_response,
+//             },
 //             uploadDate: Timestamp.now(),
 //             status: "completed",
+//             processingTime,
 //           }
 
-//           await setDoc(doc(db, "amc", sanitizedFileName), analysis)
+//           try {
+//             await setDoc(doc(db, "amc", sanitizedFileName), analysis)
+//             console.log("Successfully stored document in Firestore:", sanitizedFileName);
+//           } catch (firestoreError) {
+//             console.error("Firestore write failed for:", fileName, firestoreError)
+//             throw new Error(`Failed to store document for ${fileName} in Firestore`)
+//           }
 
 //           setUploadedFiles((prev) =>
 //             prev.map((file) =>
@@ -176,6 +228,7 @@
 //           )
 //         } catch (error) {
 //           const errorMessage = error instanceof Error ? error.message : "Unknown error"
+//           console.error("Error processing file:", uploadedFile.file.name, errorMessage)
 //           setUploadedFiles((prev) =>
 //             prev.map((file) =>
 //               file.id === uploadedFile.id
@@ -191,9 +244,15 @@
 //             response: { issues: [], raw_response: [] },
 //             uploadDate: Timestamp.now(),
 //             status: "failed",
+//             processingTime: "0s",
 //           }
 
-//           await setDoc(doc(db, "amc", sanitizedFileName), analysis)
+//           try {
+//             await setDoc(doc(db, "amc", sanitizedFileName), analysis)
+//             console.log("Stored error document in Firestore:", sanitizedFileName);
+//           } catch (firestoreError) {
+//             console.error("Firestore write failed for error document:", uploadedFile.file.name, firestoreError)
+//           }
 //         }
 //       }
 
@@ -279,6 +338,11 @@
 //                         <div className="file-item__details">
 //                           <div className="file-item__name">{uploadedFile.file.name}</div>
 //                           <div className="file-item__size">{formatFileSize(uploadedFile.file.size)}</div>
+//                           {uploadedFile.status === "error" && uploadedFile.error && (
+//                             <div className="file-item__error" style={{ color: "var(--cds-red-60)" }}>
+//                               {uploadedFile.error}
+//                             </div>
+//                           )}
 //                         </div>
 //                       </div>
 
@@ -343,10 +407,10 @@
 //             <h3 className="upload-info__title">Upload Guidelines</h3>
 //             <ul className="upload-info__list">
 //               <li>Only PDF files are accepted</li>
-//               <li>Maximum file size: 10MB per file</li>
+//               {/* <li>Maximum file size: 10MB per file</li> */}
 //               <li>Maximum 5 files per upload session</li>
 //               <li>Files will be analyzed against current SEBI guidelines</li>
-//               <li>Analysis typically takes 2-5 minutes per document</li>
+//               <li>Analysis typically takes 1-2 minutes per document</li>
 //             </ul>
 //           </div>
 //         </div>
@@ -478,6 +542,11 @@
 //           color: var(--cds-text-secondary);
 //         }
 
+//         .file-item__error {
+//           font-size: 0.75rem;
+//           margin-top: var(--cds-spacing-01);
+//         }
+
 //         .file-item__status {
 //           margin-right: var(--cds-spacing-04);
 //         }
@@ -603,10 +672,6 @@
 //   )
 // }
 
-
-
-
-
 "use client"
 
 import type React from "react"
@@ -615,6 +680,7 @@ import { useRouter } from "next/navigation"
 import Layout from "../../components/layout"
 import { doc, setDoc, Timestamp } from "firebase/firestore"
 import { db } from "../../lib/firebase"
+import { jsPDF } from "jspdf"
 
 interface UploadedFile {
   id: string
@@ -622,13 +688,14 @@ interface UploadedFile {
   progress: number
   status: "pending" | "uploading" | "completed" | "error"
   error?: string
+  isText?: boolean
 }
 
 interface Issue {
   clause: string
   issue: string
   fix: string
-  reference?: string // Made optional to handle missing reference
+  reference?: string
 }
 
 interface DocumentAnalysis {
@@ -646,6 +713,7 @@ export default function UploadPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [pastedText, setPastedText] = useState("")
   const router = useRouter()
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -673,7 +741,15 @@ export default function UploadPage() {
     }
   }, [])
 
-  const handleFiles = (files: File[]) => {
+  const createPdfFromText = (text: string): File => {
+    const doc = new jsPDF()
+    doc.setFontSize(12)
+    doc.text(text, 10, 10)
+    const pdfBlob = doc.output("blob")
+    return new File([pdfBlob], `pasted_text_${Date.now()}.pdf`, { type: "application/pdf" })
+  }
+
+  const handleFiles = (files: File[], isText: boolean = false) => {
     const validFiles = files.filter((file) => {
       if (file.type !== "application/pdf") {
         alert(`${file.name} is not a PDF file. Only PDF files are allowed.`)
@@ -696,9 +772,26 @@ export default function UploadPage() {
       file,
       progress: 0,
       status: "pending",
+      isText,
     }))
 
     setUploadedFiles((prev) => [...prev, ...newFiles])
+  }
+
+  const handlePasteText = () => {
+    if (!pastedText.trim()) {
+      alert("Please enter some text to analyze.")
+      return
+    }
+
+    if (pastedText.length > 10000) {
+      alert("Pasted text is too long. Maximum 10,000 characters allowed.")
+      return
+    }
+
+    const pdfFile = createPdfFromText(pastedText)
+    handleFiles([pdfFile], true)
+    setPastedText("")
   }
 
   const removeFile = (id: string) => {
@@ -706,11 +799,10 @@ export default function UploadPage() {
   }
 
   const sanitizeFileName = (fileName: string) => {
-    // Remove invalid Firestore document ID characters, trim, and append unique timestamp
     const baseName = fileName
       .replace(/[^a-zA-Z0-9.-]/g, "_")
       .replace(/\.\./g, "_")
-      .replace(/^\.+|\.+$/g, "") // Remove leading/trailing dots
+      .replace(/^\.+|\.+$/g, "")
       .slice(0, 90)
     const timestamp = Date.now()
     return `${baseName}_${timestamp}_${Math.random().toString(36).substr(2, 4)}`
@@ -734,46 +826,45 @@ export default function UploadPage() {
       const data = await response.json()
       console.log("API response for", file.name, JSON.stringify(data, null, 2))
 
-      // Validate API response structure
       if (!data || !Array.isArray(data.issues) || !Array.isArray(data.raw_response)) {
         console.error("Invalid API response structure:", data)
         throw new Error(`Invalid API response format for ${file.name}: Missing or invalid issues/raw_response arrays`)
       }
 
-      // Validate each issue object
       const invalidIssues = data.issues.map((issue: any, index: number) => {
-        if (!issue ||
-            typeof issue.clause !== "string" ||
-            typeof issue.issue !== "string" ||
-            typeof issue.fix !== "string" ||
-            (issue.reference !== undefined && typeof issue.reference !== "string")) {
-          return { index, issue };
+        if (
+          !issue ||
+          typeof issue.clause !== "string" ||
+          typeof issue.issue !== "string" ||
+          typeof issue.fix !== "string" ||
+          (issue.reference !== undefined && typeof issue.reference !== "string")
+        ) {
+          return { index, issue }
         }
-        return null;
-      }).filter(Boolean);
+        return null
+      }).filter(Boolean)
 
       if (invalidIssues.length > 0) {
-        console.error("Invalid issues in API response:", invalidIssues);
-        throw new Error(`Invalid API response format for ${file.name}: Issues array contains invalid objects at indices ${invalidIssues.map(i => i.index).join(", ")}`);
+        console.error("Invalid issues in API response:", invalidIssues)
+        throw new Error(`Invalid API response format for ${file.name}: Issues array contains invalid objects at indices ${invalidIssues.map((i) => i.index).join(", ")}`)
       }
 
-      // Validate raw_response contains strings
       const invalidRawResponses = data.raw_response.map((item: any, index: number) => {
         if (typeof item !== "string") {
-          return { index, item };
+          return { index, item }
         }
-        return null;
-      }).filter(Boolean);
+        return null
+      }).filter(Boolean)
 
       if (invalidRawResponses.length > 0) {
-        console.error("Invalid raw_response in API response:", invalidRawResponses);
-        throw new Error(`Invalid API response format for ${file.name}: raw_response contains non-string items at indices ${invalidRawResponses.map(i => i.index).join(", ")}`);
+        console.error("Invalid raw_response in API response:", invalidRawResponses)
+        throw new Error(`Invalid API response format for ${file.name}: raw_response contains non-string items at indices ${invalidRawResponses.map((i) => i.index).join(", ")}`)
       }
 
       const processingTime = ((Date.now() - startTime) / 1000).toFixed(2) + "s"
       return { fileName: file.name, response: data, processingTime }
     } catch (error) {
-      console.error("API call failed for file:", file.name, error);
+      console.error("API call failed for file:", file.name, error)
       throw error
     }
   }
@@ -794,10 +885,8 @@ export default function UploadPage() {
         )
 
         try {
-          // Make API call
           const { fileName, response, processingTime } = await handleApiCall(uploadedFile.file)
 
-          // Simulate progress for UI
           for (let progress = 0; progress <= 100; progress += 10) {
             await new Promise((resolve) => setTimeout(resolve, 200))
             setUploadedFiles((prev) =>
@@ -807,7 +896,6 @@ export default function UploadPage() {
             )
           }
 
-          // Store API response in Firestore
           const sanitizedFileName = sanitizeFileName(fileName)
           const analysis: DocumentAnalysis = {
             fileName,
@@ -822,7 +910,7 @@ export default function UploadPage() {
 
           try {
             await setDoc(doc(db, "amc", sanitizedFileName), analysis)
-            console.log("Successfully stored document in Firestore:", sanitizedFileName);
+            console.log("Successfully stored document in Firestore:", sanitizedFileName)
           } catch (firestoreError) {
             console.error("Firestore write failed for:", fileName, firestoreError)
             throw new Error(`Failed to store document for ${fileName} in Firestore`)
@@ -846,7 +934,6 @@ export default function UploadPage() {
             )
           )
 
-          // Store error in Firestore
           const sanitizedFileName = sanitizeFileName(uploadedFile.file.name)
           const analysis: DocumentAnalysis = {
             fileName: uploadedFile.file.name,
@@ -858,7 +945,7 @@ export default function UploadPage() {
 
           try {
             await setDoc(doc(db, "amc", sanitizedFileName), analysis)
-            console.log("Stored error document in Firestore:", sanitizedFileName);
+            console.log("Stored error document in Firestore:", sanitizedFileName)
           } catch (firestoreError) {
             console.error("Firestore write failed for error document:", uploadedFile.file.name, firestoreError)
           }
@@ -890,8 +977,7 @@ export default function UploadPage() {
           <div className="upload-page__header">
             <h1 className="cds-heading-05">Upload Documents</h1>
             <p className="cds-body-02 upload-page__subtitle">
-              Upload your mutual fund documents for SEBI compliance analysis. Only PDF files are accepted (max 10MB per
-              file, 5 files total).
+              Upload your mutual fund documents or paste text for SEBI compliance analysis. Only PDF files are accepted for uploads (max 10MB per file, 5 items total).
             </p>
           </div>
 
@@ -928,9 +1014,40 @@ export default function UploadPage() {
               </div>
             </div>
 
+            <div className="or-separation">
+              <h1>OR</h1>
+            </div>
+
+            <div className="text-input-section">
+              <h3 className="text-input__title">Paste Document Text</h3>
+              <textarea
+                className="text-input__textarea"
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="Paste your document text here for analysis..."
+                rows={6}
+              />
+              <div className="text-input__actions">
+                <button
+                  className="cds-btn cds-btn--primary"
+                  onClick={handlePasteText}
+                  disabled={isUploading || pastedText.trim().length === 0}
+                >
+                  Analyze Text
+                </button>
+                <button
+                  className="cds-btn cds-btn--ghost"
+                  onClick={() => setPastedText("")}
+                  disabled={isUploading || pastedText.length === 0}
+                >
+                  Clear Text
+                </button>
+              </div>
+            </div>
+
             {uploadedFiles.length > 0 && (
               <div className="file-list">
-                <h3 className="file-list__title">Uploaded Files ({uploadedFiles.length}/5)</h3>
+                <h3 className="file-list__title">Uploaded Items ({uploadedFiles.length}/5)</h3>
                 <div className="file-list__items">
                   {uploadedFiles.map((uploadedFile) => (
                     <div key={uploadedFile.id} className="file-item">
@@ -945,7 +1062,9 @@ export default function UploadPage() {
                           </svg>
                         </div>
                         <div className="file-item__details">
-                          <div className="file-item__name">{uploadedFile.file.name}</div>
+                          <div className="file-item__name">
+                            {uploadedFile.isText ? "Pasted Text Document" : uploadedFile.file.name}
+                          </div>
                           <div className="file-item__size">{formatFileSize(uploadedFile.file.size)}</div>
                           {uploadedFile.status === "error" && uploadedFile.error && (
                             <div className="file-item__error" style={{ color: "var(--cds-red-60)" }}>
@@ -981,7 +1100,7 @@ export default function UploadPage() {
                       <button
                         className="file-item__remove"
                         onClick={() => removeFile(uploadedFile.id)}
-                        aria-label="Remove file"
+                        aria-label="Remove item"
                         disabled={uploadedFile.status === "uploading"}
                       >
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -1015,11 +1134,11 @@ export default function UploadPage() {
           <div className="upload-info">
             <h3 className="upload-info__title">Upload Guidelines</h3>
             <ul className="upload-info__list">
-              <li>Only PDF files are accepted</li>
-              <li>Maximum file size: 10MB per file</li>
-              <li>Maximum 5 files per upload session</li>
+              <li>Only PDF files are accepted for uploads</li>
+              <li>Pasted text must be under 10,000 characters</li>
+              <li>Maximum 5 items (files or pasted text) per upload session</li>
               <li>Files will be analyzed against current SEBI guidelines</li>
-              <li>Analysis typically takes 2-5 minutes per document</li>
+              <li>Analysis typically takes 1-2 minutes per item</li>
             </ul>
           </div>
         </div>
@@ -1059,6 +1178,7 @@ export default function UploadPage() {
           background-color: var(--cds-layer-01);
           transition: all 70ms cubic-bezier(0.2, 0, 0.38, 0.9);
           position: relative;
+          margin-bottom: var(--cds-spacing-06);
         }
 
         .upload-dropzone--active {
@@ -1095,6 +1215,45 @@ export default function UploadPage() {
           height: 100%;
           opacity: 0;
           cursor: pointer;
+        }
+
+        .text-input-section {
+          background-color: var(--cds-layer-01);
+          border: 1px solid var(--cds-border-subtle-01);
+          border-radius: 8px;
+          padding: var(--cds-spacing-06);
+          margin-bottom: var(--cds-spacing-06);
+        }
+
+        .text-input__title {
+          font-size: 1.125rem;
+          font-weight: 600;
+          margin-bottom: var(--cds-spacing-04);
+          color: var(--cds-text-primary);
+        }
+
+        .text-input__textarea {
+          width: 100%;
+          padding: var(--cds-spacing-04);
+          border: 1px solid var(--cds-border-subtle-01);
+          border-radius: 4px;
+          resize: vertical;
+          font-family: inherit;
+          font-size: 0.875rem;
+          color: var(--cds-text-primary);
+          background-color: var(--cds-layer-02);
+        }
+
+        .text-input__textarea:focus {
+          outline: 2px solid var(--cds-blue-60);
+          outline-offset: 2px;
+        }
+
+        .text-input__actions {
+          display: flex;
+          gap: var(--cds-spacing-04);
+          margin-top: var(--cds-spacing-04);
+          justify-content: center;
         }
 
         .file-list {
@@ -1250,7 +1409,7 @@ export default function UploadPage() {
         }
 
         .upload-info__list li::before {
-          content: '•';
+          content: "•";
           color: var(--cds-blue-60);
           position: absolute;
           left: 0;
@@ -1273,6 +1432,10 @@ export default function UploadPage() {
           }
 
           .upload-actions {
+            flex-direction: column;
+          }
+
+          .text-input__actions {
             flex-direction: column;
           }
         }

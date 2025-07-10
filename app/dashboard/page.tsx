@@ -4,6 +4,11 @@ import { useState, useEffect } from "react"
 import Layout from "../../components/layout"
 import { collection, query, orderBy, getDocs, doc, getDoc } from "firebase/firestore"
 import { db } from "../../lib/firebase"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import { tomorrow } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { jsPDF } from "jspdf"
 
 interface ComplianceResult {
   id: string
@@ -25,6 +30,7 @@ interface ViolationDetail {
   pageReference: string
   sebiRegulation: string
   recommendation: string
+  rawContent?: string
 }
 
 interface FirestoreDocument {
@@ -36,7 +42,7 @@ interface FirestoreDocument {
       fix: string
       reference?: string
     }[]
-    raw_response: string[] // Kept for schema compatibility, but not used
+    raw_response: string[]
   }
   uploadDate: { seconds: number; nanoseconds: number }
   status: "completed" | "failed"
@@ -51,7 +57,80 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch all documents for initial results
+  const parseRawResponse = (raw: string): string => {
+    try {
+      const parsed = JSON.parse(raw)
+      if (typeof parsed === "object" && parsed !== null) {
+        return "```json\n" + JSON.stringify(parsed, null, 2) + "\n```"
+      }
+      return raw
+    } catch (e) {
+      return raw
+    }
+  }
+
+  const generatePDFReport = (result: ComplianceResult, violations: ViolationDetail[]) => {
+    const doc = new jsPDF()
+    const margin = 10
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const maxWidth = pageWidth - 2 * margin
+    let y = margin
+
+    // Set document title
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(16)
+    doc.text(`Compliance Issues Report: ${result.fileName}`, margin, y)
+    y += 10
+
+    // Check if there are issues
+    if (violations.length === 0 || result.status !== "completed") {
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(12)
+      doc.text("No issues found or analysis failed for this document.", margin, y)
+      y += 10
+    } else {
+      // Issues section
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(14)
+      doc.text("Compliance Issues", margin, y)
+      y += 10
+
+      violations.forEach((violation, index) => {
+        // Check if we need a new page
+        if (y > doc.internal.pageSize.getHeight() - 20) {
+          doc.addPage()
+          y = margin
+        }
+
+        // Issue heading
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(12)
+        const issueTitle = `Issue ${index + 1}: ${violation.type.charAt(0).toUpperCase() + violation.type.slice(1)}`
+        doc.text(issueTitle, margin, y)
+        y += 7
+
+        // Issue details
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(10)
+        const categoryLines = doc.splitTextToSize(`Category: ${violation.category}`, maxWidth)
+        doc.text(categoryLines, margin + 5, y)
+        y += categoryLines.length * 5 + 2
+
+        const descriptionLines = doc.splitTextToSize(`Description: ${violation.description}`, maxWidth)
+        doc.text(descriptionLines, margin + 5, y)
+        y += descriptionLines.length * 5 + 2
+
+        const recommendationLines = doc.splitTextToSize(`Recommendation: ${violation.recommendation}`, maxWidth)
+        doc.text(recommendationLines, margin + 5, y)
+        y += recommendationLines.length * 5 + 5
+      })
+    }
+
+    // Save the PDF
+    const sanitizedFileName = result.fileName.replace(/[^a-zA-Z0-9.-]/g, "_")
+    doc.save(`Issues_Report_${sanitizedFileName}.pdf`)
+  }
+
   useEffect(() => {
     const fetchResults = async () => {
       try {
@@ -65,10 +144,8 @@ export default function DashboardPage() {
           const data = doc.data() as FirestoreDocument
           const docId = doc.id
 
-          // Use only the issues array
           const allIssues = data.response.issues
 
-          // Calculate violation counts
           const criticalViolations = allIssues.filter(
             (issue) => issue.issue.toLowerCase().includes("critical") || issue.fix.toLowerCase().includes("critical")
           ).length
@@ -77,13 +154,14 @@ export default function DashboardPage() {
           ).length
           const warnings = allIssues.filter(
             (issue) =>
-              !issue.issue.toLowerCase().includes("critical") && !issue.issue.toLowerCase().includes("minor") &&
-              !issue.fix.toLowerCase().includes("critical") && !issue.fix.toLowerCase().includes("minor")
+              !issue.issue.toLowerCase().includes("critical") &&
+              !issue.issue.toLowerCase().includes("minor") &&
+              !issue.fix.toLowerCase().includes("critical") &&
+              !issue.fix.toLowerCase().includes("minor")
           ).length
           const totalViolations = criticalViolations + minorViolations + warnings
           const overallScore = totalViolations === 0 ? 100 : Math.max(0, 100 - (criticalViolations * 10 + minorViolations * 5 + warnings * 2))
 
-          // Convert Firestore timestamp to readable date
           const processedAt = new Date(data.uploadDate.seconds * 1000).toLocaleString("en-US", {
             year: "numeric",
             month: "2-digit",
@@ -118,7 +196,6 @@ export default function DashboardPage() {
     fetchResults()
   }, [])
 
-  // Fetch violations for selected document
   useEffect(() => {
     if (!selectedDocument) {
       setViolations([])
@@ -134,7 +211,6 @@ export default function DashboardPage() {
           const data = docSnap.data() as FirestoreDocument
           const docId = docSnap.id
 
-          // Use only the issues array
           const fetchedViolations: ViolationDetail[] = data.response.issues.map((issue, index) => {
             const type = issue.issue.toLowerCase().includes("critical") || issue.fix.toLowerCase().includes("critical")
               ? "critical"
@@ -149,6 +225,7 @@ export default function DashboardPage() {
               pageReference: issue.reference ? (issue.reference.match(/Page \d+/)?.[0] || "N/A") : "N/A",
               sebiRegulation: issue.reference || "N/A",
               recommendation: issue.fix,
+              rawContent: data.response.raw_response[index] ? parseRawResponse(data.response.raw_response[index]) : undefined,
             }
           })
 
@@ -313,30 +390,43 @@ export default function DashboardPage() {
                   <div className="violations-section">
                     <div className="violations-header">
                       <h2 className="section-title">Compliance Issues</h2>
-                      <div className="violations-filter">
+                      <div className="violations-controls">
+                        <div className="violations-filter">
+                          <button
+                            className={`filter-btn ${filterType === "all" ? "filter-btn--active" : ""}`}
+                            onClick={() => setFilterType("all")}
+                          >
+                            All ({violations.length})
+                          </button>
+                          <button
+                            className={`filter-btn ${filterType === "critical" ? "filter-btn--active" : ""}`}
+                            onClick={() => setFilterType("critical")}
+                          >
+                            Critical ({violations.filter((v) => v.type === "critical").length})
+                          </button>
+                          <button
+                            className={`filter-btn ${filterType === "minor" ? "filter-btn--active" : ""}`}
+                            onClick={() => setFilterType("minor")}
+                          >
+                            Minor ({violations.filter((v) => v.type === "minor").length})
+                          </button>
+                          <button
+                            className={`filter-btn ${filterType === "warning" ? "filter-btn--active" : ""}`}
+                            onClick={() => setFilterType("warning")}
+                          >
+                            Warnings ({violations.filter((v) => v.type === "warning").length})
+                          </button>
+                        </div>
                         <button
-                          className={`filter-btn ${filterType === "all" ? "filter-btn--active" : ""}`}
-                          onClick={() => setFilterType("all")}
+                          className="cds-btn cds-btn--primary download-btn"
+                          onClick={() => {
+                            const selectedResult = results.find((r) => r.id === selectedDocument)
+                            if (selectedResult) {
+                              generatePDFReport(selectedResult, filteredViolations)
+                            }
+                          }}
                         >
-                          All ({violations.length})
-                        </button>
-                        <button
-                          className={`filter-btn ${filterType === "critical" ? "filter-btn--active" : ""}`}
-                          onClick={() => setFilterType("critical")}
-                        >
-                          Critical ({violations.filter((v) => v.type === "critical").length})
-                        </button>
-                        <button
-                          className={`filter-btn ${filterType === "minor" ? "filter-btn--active" : ""}`}
-                          onClick={() => setFilterType("minor")}
-                        >
-                          Minor ({violations.filter((v) => v.type === "minor").length})
-                        </button>
-                        <button
-                          className={`filter-btn ${filterType === "warning" ? "filter-btn--active" : ""}`}
-                          onClick={() => setFilterType("warning")}
-                        >
-                          Warnings ({violations.filter((v) => v.type === "warning").length})
+                          Download PDF
                         </button>
                       </div>
                     </div>
@@ -356,12 +446,38 @@ export default function DashboardPage() {
 
                             <div className="violation-card__content">
                               <h4 className="violation-card__description">{violation.description}</h4>
-                              <div className="violation-card__regulation">
-                                <strong>SEBI Regulation:</strong> {violation.sebiRegulation}
-                              </div>
                               <div className="violation-card__recommendation">
                                 <strong>Recommendation:</strong> {violation.recommendation}
                               </div>
+                              {violation.rawContent && (
+                                <div className="violation-card__raw-content">
+                                  <h5>Raw Analysis:</h5>
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                      code({ node, inline, className, children, ...props }) {
+                                        const match = /language-(\w+)/.exec(className || "")
+                                        return !inline && match ? (
+                                          <SyntaxHighlighter
+                                            style={tomorrow}
+                                            language={match[1]}
+                                            PreTag="div"
+                                            {...props}
+                                          >
+                                            {String(children).replace(/\n$/, "")}
+                                          </SyntaxHighlighter>
+                                        ) : (
+                                          <code className={className} {...props}>
+                                            {children}
+                                          </code>
+                                        )
+                                      },
+                                    }}
+                                  >
+                                    {violation.rawContent}
+                                  </ReactMarkdown>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))
@@ -374,9 +490,7 @@ export default function DashboardPage() {
               </div>
 
               <div className="dashboard__actions">
-                {/* <button className="cds-btn cds-btn--primary">Download Report</button>
-                <button className="cds-btn cds-btn--secondary">Export to Excel</button>
-                <button className="cds-btn cds-btn--ghost">Print Summary</button> */}
+                {/* Additional global actions can be added here if needed */}
               </div>
             </>
           )}
@@ -524,6 +638,7 @@ export default function DashboardPage() {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          margin-bottom: var(--cds-spacing-04);
         }
 
         .compliance-score {
@@ -595,6 +710,12 @@ export default function DashboardPage() {
           margin-bottom: var(--cds-spacing-05);
         }
 
+        .violations-controls {
+          display: flex;
+          align-items: center;
+          gap: var(--cds-spacing-04);
+        }
+
         .violations-filter {
           display: flex;
           gap: var(--cds-spacing-02);
@@ -621,6 +742,11 @@ export default function DashboardPage() {
           border-color: var(--cds-blue-60);
         }
 
+        .download-btn {
+          padding: var(--cds-spacing-03) var(--cds-spacing-04);
+          font-size: 0.875rem;
+        }
+
         .violations-list {
           display: flex;
           flex-direction: column;
@@ -645,7 +771,7 @@ export default function DashboardPage() {
         }
 
         .violation-card--warning {
-          border-left-color: red;
+          border-left-color: var(--cds-support-info);
         }
 
         .violation-card__header {
@@ -701,12 +827,53 @@ export default function DashboardPage() {
           margin-bottom: var(--cds-spacing-03);
         }
 
-        .violation-card__regulation,
         .violation-card__recommendation {
           font-size: 0.875rem;
           color: var(--cds-text-secondary);
-          margin-bottom: var(--cds-spacing-02);
+          margin-bottom: var(--cds-spacing-03);
           line-height: 1.4;
+        }
+
+        .violation-card__raw-content {
+          background-color: var(--cds-layer-02);
+          border-radius: 4px;
+          padding: var(--cds-spacing-04);
+          margin-top: var(--cds-spacing-03);
+        }
+
+        .violation-card__raw-content h5 {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: var(--cds-text-primary);
+          margin-bottom: var(--cds-spacing-03);
+        }
+
+        .violation-card__raw-content :global(p) {
+          margin-bottom: var(--cds-spacing-03);
+          color: var(--cds-text-primary);
+        }
+
+        .violation-card__raw-content :global(ul),
+        .violation-card__raw-content :global(ol) {
+          margin-left: var(--cds-spacing-05);
+          margin-bottom: var(--cds-spacing-03);
+        }
+
+        .violation-card__raw-content :global(li) {
+          color: var(--cds-text-primary);
+          margin-bottom: var(--cds-spacing-02);
+        }
+
+        .violation-card__raw-content :global(pre) {
+          background-color: var(--cds-layer-03);
+          border-radius: 4px;
+          padding: var(--cds-spacing-03);
+          overflow-x: auto;
+        }
+
+        .violation-card__raw-content :global(code) {
+          font-family: "IBM Plex Mono", monospace;
+          font-size: 0.875rem;
         }
 
         .dashboard__actions {
@@ -722,8 +889,9 @@ export default function DashboardPage() {
             grid-template-columns: 1fr;
           }
 
-          .violations-filter {
+          .violations-controls {
             flex-wrap: wrap;
+            justify-content: flex-start;
           }
         }
 
@@ -755,8 +923,15 @@ export default function DashboardPage() {
             gap: var(--cds-spacing-03);
           }
 
-          .dashboard__actions {
+          .violations-controls {
             flex-direction: column;
+            align-items: flex-start;
+            width: 100%;
+          }
+
+          .download-btn {
+            width: 100%;
+            text-align: center;
           }
         }
       `}</style>

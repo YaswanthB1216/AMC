@@ -31,11 +31,11 @@ export default function Layout({ children }: LayoutProps) {
           <div className="header__brand">
             <Link href="/" className="header__brand-link" style={{ textDecoration: 'none' }}>
               <div className="header__logo-amc" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.1rem' }}>
-                <span className="header__brand-text" style={{ fontWeight: 700, fontSize: '1.0rem', letterSpacing: '0.05em', color: 'var(--cds-text-primary)', lineHeight: 1 }}>AMC</span>
+                  <Image src={kaaraLogo} alt="Kaara Logo" width={52} height={32} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+                {/* <span className="header__brand-text" style={{ fontWeight: 700, fontSize: '1.0rem', letterSpacing: '0.05em', color: 'var(--cds-text-primary)', lineHeight: 1 }}>AMC</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 400, fontSize: '0.4rem', color: 'var(--cds-text-secondary)' }}>
                   by
-                  <Image src={kaaraLogo} alt="Kaara Logo" width={32} height={12} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
-                </span>
+                </span> */}
               </div>
             </Link>
           </div>
