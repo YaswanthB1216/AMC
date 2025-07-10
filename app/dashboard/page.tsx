@@ -358,17 +358,17 @@ export default function DashboardPage() {
                               </div>
                             </div>
                             <div className="violations-summary">
-                              <div className="violation-count violation-count--critical">
+                              {/* <div className="violation-count violation-count--critical">
                                 <span className="violation-count__number">{result.criticalViolations}</span>
                                 <span className="violation-count__label">Critical</span>
                               </div>
                               <div className="violation-count violation-count--minor">
                                 <span className="violation-count__number">{result.minorViolations}</span>
                                 <span className="violation-count__label">Minor</span>
-                              </div>
+                              </div> */}
                               <div className="violation-count violation-count--warning">
                                 <span className="violation-count__number">{result.warnings}</span>
-                                <span className="violation-count__label">Warnings</span>
+                                <span className="violation-count__label">Issues</span>
                               </div>
                             </div>
                           </div>
@@ -392,7 +392,7 @@ export default function DashboardPage() {
                       <h2 className="section-title">Compliance Issues</h2>
                       <div className="violations-controls">
                         <div className="violations-filter">
-                          <button
+                          {/* <button
                             className={`filter-btn ${filterType === "all" ? "filter-btn--active" : ""}`}
                             onClick={() => setFilterType("all")}
                           >
@@ -409,16 +409,16 @@ export default function DashboardPage() {
                             onClick={() => setFilterType("minor")}
                           >
                             Minor ({violations.filter((v) => v.type === "minor").length})
-                          </button>
+                          </button> */}
                           <button
                             className={`filter-btn ${filterType === "warning" ? "filter-btn--active" : ""}`}
                             onClick={() => setFilterType("warning")}
                           >
-                            Warnings ({violations.filter((v) => v.type === "warning").length})
+                            Issues ({violations.filter((v) => v.type === "warning").length})
                           </button>
                         </div>
                         <button
-                          className="cds-btn cds-btn--primary download-btn"
+                          className="cds-btn--primary download-btn"
                           onClick={() => {
                             const selectedResult = results.find((r) => r.id === selectedDocument)
                             if (selectedResult) {
@@ -725,7 +725,7 @@ export default function DashboardPage() {
           background: none;
           border: 1px solid var(--cds-border-subtle-01);
           color: var(--cds-text-secondary);
-          padding: var(--cds-spacing-02) var(--cds-spacing-03);
+          padding: var(--cds-spacing-04) var(--cds-spacing-03);
           border-radius: 4px;
           cursor: pointer;
           font-size: 0.875rem;
@@ -743,8 +743,11 @@ export default function DashboardPage() {
         }
 
         .download-btn {
-          padding: var(--cds-spacing-03) var(--cds-spacing-04);
+          // padding: var(--cds-spacing-03) var(--cds-spacing-04);
+          padding: var(--cds-spacing-04) var(--cds-spacing-03);
+          border:none;
           font-size: 0.875rem;
+          border-radius: 4px;
         }
 
         .violations-list {
